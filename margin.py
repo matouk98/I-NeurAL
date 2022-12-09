@@ -1,0 +1,147 @@
+import os
+import time
+import random
+import numpy as np
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+
+from utils import get_data, get_pop_data
+
+def train_cls_batch(model, X, y, num_epochs=10, lr=0.001, batch_size=64):
+    model.train()
+    X = torch.cat(X).float()
+    y = torch.cat(y).float()
+
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    dataset = TensorDataset(X, y)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    loss_fn = nn.BCELoss().to(device)
+    num = X.size(0)
+
+    for i in range(num_epochs):
+        batch_loss = 0.0
+        for x, y in dataloader:
+            x, y = x.to(device), y.to(device)
+            pred = model(x).view(-1)
+
+            loss = loss_fn(pred, y)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            batch_loss += loss.item()
+        
+        if batch_loss / num <= 1e-3:
+            return batch_loss / num
+
+    return batch_loss / num
+
+def test(model, X, y):
+    model.eval()
+    dataset = TensorDataset(X, y)
+    dataloader = DataLoader(dataset, batch_size=64, shuffle=False)
+    num = X.size(0)
+    acc = 0.0
+    
+    for x,y in dataloader:
+        x, y = x.to(device), y.to(device)
+        pred = model(x).view(-1)
+        pred = (pred > 0.5)
+        acc += torch.sum(pred == y).item()
+    
+    print("Test Acc:{:.2f}".format(acc * 100.0 / num))
+
+class MLP(nn.Module):
+    def __init__(self, input_dim, hidden_size=100):
+        super(MLP, self).__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_size)
+        self.activate = nn.ReLU()
+        self.fc2 = nn.Linear(hidden_size, 1)
+
+    def forward(self, x):
+        return torch.sigmoid(self.fc2(self.activate(self.fc1(x))))
+
+random.seed(42)
+np.random.seed(42)
+torch.manual_seed(42)
+
+device = 'cuda'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+# [phishing, ijcnn, letter, fashion, mnist, cifar]
+label_ratio = 0.03
+test_mode = 'regret'
+dataset_name = 'cifar'
+
+if __name__ == "__main__":
+    print(dataset_name, label_ratio)
+    if test_mode == 'regret':
+        X, Y = get_data(dataset_name)
+    elif test_mode == 'accuracy':
+        X, Y, test_X, test_Y = get_pop_data(dataset_name)
+    dataset = TensorDataset(torch.tensor(X.astype(np.float32)), torch.tensor(Y.astype(np.int64)))
+
+    if dataset_name in ['phishing', 'mnist', 'letter']:
+        margin = 0.9
+    elif dataset_name in ['cifar', 'ijcnn']:
+        margin = 0.95
+    elif dataset_name in ['fashion']:
+        margin = 0.98
+        
+    ber = 1.10
+    if label_ratio == 0.10:
+        if dataset_name in ['phishing', 'ijcnn']:
+            ber = 0.90
+    elif label_ratio == 0.20:
+        ber = 0.80
+    elif label_ratio == 0.50:
+        ber = 0.50
+
+    model = MLP(X.shape[1]).to(device)
+    regret = []
+    X_train, y_train = [], []
+    n = len(dataset)
+    budget = int(n * label_ratio)
+    current_regret = 0.0
+    query_num = 0
+    tf = time.time()
+
+    for i in range(n):
+        model.eval()
+        x, y = dataset[i]
+        x = x.view(1, -1).to(device)
+        prob = model(x).item()
+        pred = int(prob >= 0.5)
+        lbl = y.item()
+        if pred != lbl:
+            current_regret += 1
+
+        if (abs(prob - 0.5) < margin / 2) and (query_num < budget):
+            X_train.append(x)
+            y_train.append(y.view(-1))
+            loss = train_cls_batch(model, X_train, y_train)
+            query_num += 1
+        elif ber is not None and random.random() > ber and query_num < budget:
+            X_train.append(x)
+            y_train.append(y.view(-1))
+            loss = train_cls_batch(model, X_train, y_train)
+            query_num += 1
+
+        # if (i+1) % 1000 == 0:
+        #     print("Time:{:.2f}\tIters:{}\tRegret:{:.1f}".format(time.time()-tf, i+1, current_regret))
+        #     tf = time.time()
+        regret.append(current_regret)
+        
+    print(query_num)
+    if test_mode == 'regret':
+        print(current_regret)
+        # np.save('./res/{}/margin_res.npy'.format(dataset_name), regret)
+    else:
+        test_X, test_Y = torch.tensor(test_X.astype(np.float32)), torch.tensor(test_Y.astype(np.int64))
+        test(model, test_X, test_Y)
+    
+
+
