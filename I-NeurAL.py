@@ -223,3 +223,6 @@ if __name__ == "__main__":
         test_X, test_Y = torch.tensor(test_X.astype(np.float32)), torch.tensor(test_Y.astype(np.int64))
         test(net1, net2, test_X, test_Y)
 
+
+
+
