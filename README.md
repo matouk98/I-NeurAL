@@ -26,9 +26,9 @@ performance guarantees. Advances in Neural Information Processing Systems, 34, 2
 [2] G. DeSalvo, C. Gentile, and T. S. Thune. Online active learning with surrogate loss functions.
 Advances in Neural Information Processing Systems, 34, 2021.  
 
+#### Multi-Classification
 
-
-
+In the experiments of our paper, we focus on the binary classification setting. In the "Multi" folder, we also provide the implementation of our method for multi-classification setting. The dataset link is https://drive.google.com/file/d/1dcbJ6q7KlZhckF2eyP4vCrM-TD1W8F4S/view?usp=sharing
 
 
 
